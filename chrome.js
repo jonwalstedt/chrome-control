@@ -24,7 +24,7 @@ function usage() {
   println('\n--------------')
   println('Chrome Control')
   println('--------------\n')
-  println('list                        List all open tabs in all Chrome windows          usage: ./chrome.js list')
+  println('list <string?>                       List all open tabs in all Chrome windows (optionally filter by title or url)          usage: ./chrome.js list myfilter')
   println('titles                        List all open tabs titles in all Chrome windows          usage: ./chrome.js titles')
   println('dedup                       Close duplicate tabs                              usage: ./chrome.js dedup')
   println('close <winIdx,tabIdx>       Close a specific tab in a specific window         usage: ./chrome.js close 0,13')
@@ -69,7 +69,8 @@ function chromeControl(argv) {
   const cmd = argv[0]
   switch (cmd) {
     case 'list':
-      list()
+      const filter = argv[1]
+      list(filter)
       break;
     case 'titles':
       listTitles();
@@ -96,8 +97,6 @@ function chromeControl(argv) {
     case 'focusByTitle':
       const title = argv[1];
       focusByTitle(title);
-      break;
-    case 'list':
       break;
     default:
       usage()
@@ -143,14 +142,30 @@ function getList() {
     });
 }
 
-function list() {
-  const items = getList();
+function list(filter) {
+  let items = getList();
+  if (filter) {
+    items = items.filter((item) => {
+      const matchesTitle = item.title.toLowerCase().indexOf(filter.toLowerCase()) > -1;
+      const matchesUrl = item.url.toLowerCase().indexOf(filter.toLowerCase()) > -1;
+      return matchesTitle || matchesUrl;
+    });
+  }
+
   println(JSON.stringify({ items }));
 }
 
-function listTitles() {
-  const list = getList();
-  list.forEach((item) => {
+function listTitles(filter) {
+  let items = getList();
+  if (filter) {
+    items = items.filter((item) => {
+      const matchesTitle = item.title.toLowerCase().indexOf(filter.toLowerCase()) > -1;
+      const matchesUrl = item.url.toLowerCase().indexOf(filter.toLowerCase()) > -1;
+      return matchesTitle || matchesUrl;
+    });
+  }
+
+  items.forEach((item) => {
     println(item.title);
   });
 }
