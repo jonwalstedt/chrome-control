@@ -166,7 +166,7 @@ function listTitles(filter) {
   }
 
   items.forEach((item) => {
-    println(item.title);
+    println(`${item.title} >> ${item.url}`);
   });
 }
 
@@ -224,8 +224,9 @@ function focus(arg) {
 }
 
 function focusByTitle(title) {
+  const cleanTitle = title.substring(0, title.indexOf(' >> '));
   const list = getList();
-  const result = list.find((item) => item.title === title);
+  const result = list.find((item) => item.title === cleanTitle);
   if (result) {
     const { winIdx, tabIdx } = result;
     focus(`${winIdx},${tabIdx}`);
