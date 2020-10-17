@@ -324,13 +324,13 @@ function areYouSure(tabsToClose, promptMsg, emptyMsg) {
 
   // Focus on Chrome and ask user if they really want to close these tabs
   if (MODE == MODE_CLI) {
-    println(`\n${titles.join('\n\n')}`)
+    println(`\n${titles.join('\n')}`)
     if (prompt(promptMsg) !== 'y') {
       println('Canceled')
       $.exit(0)
     }
   } else {
-    prompt(`${promptMsg}\n${titles.join(',')}`)
+    prompt(`${promptMsg}\n\m${titles.join('\n')}`)
   }
 }
 
