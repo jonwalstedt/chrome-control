@@ -30,6 +30,7 @@ function usage() {
   println('close <winIdx,tabIdx>       Close a specific tab in a specific window         usage: ./chrome.js close 0,13')
   println('close --title <string(s)>   Close all tabs with titles containing strings     usage: ./chrome.js close --title Inbox "iphone - apple"')
   println('close --url <string(s)>     Close all tabs with URLs containing strings       usage: ./chrome.js close --url mail.google apple')
+  println('close --filter <string(s)>  Close all tabs with URLs or titles containing strings       usage: ./chrome.js close --filter mail.google apple')
   println('focus <winIdx,tabIdx>       Focus on a specific tab in a specific window      usage: ./chrome.js focus 0,13')
   println('focusByTitle <string>       Focus on a specific tab by its title in a specific window      usage: ./chrome.js focus "My Tab Title"')
   println('--ui                        If set, use Chrome to show messages               usage  ./chrome.js close --title inbox --ui')
@@ -112,16 +113,19 @@ function chromeControl(argv) {
 
 // List all open tabs
 function getList() {
-  let allTabsTitle = chrome.windows.tabs.title();
-  let allTabsUrls = chrome.windows.tabs.url();
+  const allTabsTitle = chrome.windows.tabs.title();
+  const allTabsUrls = chrome.windows.tabs.url();
+  const allTabIds = chrome.windows.tabs.id();
 
   var titleToUrl = {};
   for (var winIdx = 0; winIdx < allTabsTitle.length; winIdx++) {
     for (var tabIdx = 0; tabIdx < allTabsTitle[winIdx].length; tabIdx++) {
       let title = allTabsTitle[winIdx][tabIdx];
       let url = allTabsUrls[winIdx][tabIdx];
+      let id = allTabIds[winIdx][tabIdx];
 
       titleToUrl[title] = {
+        id,
         title: title || "No Title",
         url: url,
         winIdx: winIdx,
@@ -158,9 +162,10 @@ function list(filter) {
 function listTitles(filter) {
   let items = getList();
   if (filter) {
+    const filterLowercase = `${filter}`.toLowerCase();
     items = items.filter((item) => {
-      const matchesTitle = item.title.toLowerCase().indexOf(filter.toLowerCase()) > -1;
-      const matchesUrl = item.url.toLowerCase().indexOf(filter.toLowerCase()) > -1;
+      const matchesTitle = item.title.toLowerCase().indexOf(filterLowercase) > -1;
+      const matchesUrl = item.url.toLowerCase().indexOf(filterLowercase) > -1;
       return matchesTitle || matchesUrl;
     });
   }
@@ -183,29 +188,29 @@ function closeTab(arg) {
 }
 
 // Close a tab if strings are found in the title or URL
-function closeByKeyword(cmd, keywords) {
+function closeByKeyword(cmd, filter) {
   if (cmd === '--title') {
-    getProperty = function (tab) { return tab.title() }
+    getProperty = function (tab) { return { url: '', title: tab.title()} }
   }
   else if (cmd === '--url') {
-    getProperty = function (tab) { return tab.url() }
+    getProperty = function (tab) { return { url: tab.url(), title: ''} }
+  } else if (cmd === '--filter') {
+    getProperty = function (tab) { return { url: tab.url(), title: tab.title() } }
   } else {
     usage()
   }
 
-  let tabsToClose = []
-
-  // Iterate all tabs in all windows and compare the property returned
-  // by `getProperty` to the given keywords
-  chrome.windows().forEach(window => {
-    window.tabs().forEach(tab => {
-      keywords.forEach(keyword => {
-        if (getProperty(tab).toLowerCase().includes(keyword.toLowerCase())) {
-          tabsToClose.push(tab)
-        }
-      })
-    })
+  const items = getList();
+  const filterLowercase = `${filter}`.toLowerCase();
+  const tabsToClose = items.filter((item) => {
+    const matchesTitle = item.title.toLowerCase().indexOf(filterLowercase) > -1;
+    const matchesUrl = item.url.toLowerCase().indexOf(filterLowercase) > -1;
+    return matchesTitle || matchesUrl;
   })
+  .map((item) => {
+    const { winIdx, tabIdx } = item;
+    return chrome.windows[winIdx].tabs[tabIdx];
+  });
 
   // Ask the user before closing tabs
   areYouSure(tabsToClose, 'Close these tabs?', 'Couldn\'t find any matching tabs')
@@ -314,7 +319,7 @@ function areYouSure(tabsToClose, promptMsg, emptyMsg) {
   // Grab the titles to show to the user
   let titles = []
   tabsToClose.forEach(tab => {
-    titles.push(tab.title())
+    titles.push(`${tab.title()} >> ${tab.url()}`)
   })
 
   // Focus on Chrome and ask user if they really want to close these tabs
@@ -325,7 +330,7 @@ function areYouSure(tabsToClose, promptMsg, emptyMsg) {
       $.exit(0)
     }
   } else {
-    prompt(`${promptMsg}\n\n${titles.join('\n\n')}`)
+    prompt(`${promptMsg}\n${titles.join(',')}`)
   }
 }
 
