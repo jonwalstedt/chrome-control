@@ -18,13 +18,14 @@ const MODE_CLI = 0    // Ask questions in command line
 const MODE_UI = 1     // Ask questions with Chrome dialogs
 const MODE_YES = 2    // Answer all questions with `yes`
 let MODE = MODE_CLI   // Default mode is command line
+let PREPEND_ALL_ITEM = false;
 
 // Print the usage message
 function usage() {
   println('\n--------------')
   println('Chrome Control')
   println('--------------\n')
-  println('list <string?>                       List all open tabs in all Chrome windows (optionally filter by title or url)          usage: ./chrome.js list myfilter')
+  println('list <string?> --prependAllItem                       List all open tabs in all Chrome windows (optionally filter by title or url)          usage: ./chrome.js list myfilter')
   println('titles                        List all open tabs titles in all Chrome windows          usage: ./chrome.js titles')
   println('dedup                       Close duplicate tabs                              usage: ./chrome.js dedup')
   println('close <winIdx,tabIdx>       Close a specific tab in a specific window         usage: ./chrome.js close 0,13')
@@ -65,6 +66,13 @@ function chromeControl(argv) {
   if (yesFlagIdx > -1) {
     MODE = MODE_YES
     argv.splice(yesFlagIdx, 1)
+  }
+
+  PREPEND_ALL_ITEM = false;
+  let prependAllItemIdx = argv.indexOf('--prependAllItem');
+  if (prependAllItemIdx > -1) {
+    PREPEND_ALL_ITEM = true
+    argv.splice(prependAllItemIdx, 1)
   }
 
   const cmd = argv[0]
@@ -117,14 +125,14 @@ function getList() {
   const allTabsUrls = chrome.windows.tabs.url();
   const allTabIds = chrome.windows.tabs.id();
 
-  var titleToUrl = {};
+  var titleToUrl = [];
   for (var winIdx = 0; winIdx < allTabsTitle.length; winIdx++) {
     for (var tabIdx = 0; tabIdx < allTabsTitle[winIdx].length; tabIdx++) {
       let title = allTabsTitle[winIdx][tabIdx];
       let url = allTabsUrls[winIdx][tabIdx];
       let id = allTabIds[winIdx][tabIdx];
 
-      titleToUrl[title] = {
+      titleToUrl.push({
         id,
         title: title || "No Title",
         url: url,
@@ -134,20 +142,16 @@ function getList() {
         // Alfred specific properties
         arg: `${winIdx},${tabIdx}`,
         subtitle: url,
-      };
+      });
     }
   }
-  // Iterate all tabs in all windows
-  // Double entries arrays matching windows/tabs indexes (Using this improves a lot the performances)
-  return Object.keys(titleToUrl)
-    .sort()
-    .map((title) => {
-      return titleToUrl[title];
-    });
+
+  return titleToUrl;
 }
 
 function list(filter) {
   let items = getList();
+
   if (filter) {
     items = items.filter((item) => {
       const matchesTitle = item.title.toLowerCase().indexOf(filter.toLowerCase()) > -1;
@@ -155,6 +159,20 @@ function list(filter) {
       return matchesTitle || matchesUrl;
     });
   }
+
+  const ALL_ITEM = {
+    id: 'all',
+    title: 'Close all',
+    url: '',
+    winIdx: 0,
+    tabIdx: 0,
+
+    // Alfred specific properties
+    arg: filter,
+    subtitle: 'select all items',
+  }
+
+  items = PREPEND_ALL_ITEM ? [ALL_ITEM, ...items] : items;
 
   println(JSON.stringify({ items }));
 }
@@ -201,22 +219,39 @@ function closeByKeyword(cmd, filter) {
   }
 
   const items = getList();
+
   const filterLowercase = `${filter}`.toLowerCase();
   const tabsToClose = items.filter((item) => {
     const matchesTitle = item.title.toLowerCase().indexOf(filterLowercase) > -1;
     const matchesUrl = item.url.toLowerCase().indexOf(filterLowercase) > -1;
     return matchesTitle || matchesUrl;
-  })
-  .map((item) => {
-    const { winIdx, tabIdx } = item;
-    return chrome.windows[winIdx].tabs[tabIdx];
   });
 
   // Ask the user before closing tabs
-  areYouSure(tabsToClose, 'Close these tabs?', 'Couldn\'t find any matching tabs')
+  if (MODE !== MODE_YES) {
+    areYouSure(tabsToClose, 'Close these tabs?', 'Couldn\'t find any matching tabs')
+  }
 
-  // Close tabs
-  tabsToClose.forEach(tab => { tab.close() })
+  const clearQueue = (queue) => {
+    if (!queue.length) {
+      return;
+    }
+
+    const item = queue.pop();
+    const { winIdx, tabIdx } = item;
+
+    if (chrome.windows[winIdx].tabs.length === 1) {
+      chrome.windows[winIdx].close();
+    } else {
+      chrome.windows[winIdx].tabs[tabIdx].close();
+    }
+
+    if (queue.length) {
+      clearQueue([...queue]);
+    }
+  }
+
+  clearQueue([...tabsToClose]);
 }
 
 // Focus on a specific tab
