@@ -196,11 +196,12 @@ function listTitles(filter) {
 // Close a specific tab
 function closeTab(arg) {
   let { winIdx, tabIdx } = parseWinTabIdx(arg)
-
   let tabToClose = chrome.windows[winIdx].tabs[tabIdx]
 
   // Ask the user before closing tab
-  areYouSure([tabToClose], 'Close this tab?', 'Couldn\'t find any matching tabs')
+  if (MODE !== MODE_YES) {
+    areYouSure([tabToClose], 'Close this tab?', 'Couldn\'t find any matching tabs')
+  }
 
   tabToClose.close()
 }
@@ -216,6 +217,11 @@ function closeByKeyword(cmd, filter) {
     getProperty = function (tab) { return { url: tab.url(), title: tab.title() } }
   } else {
     usage()
+  }
+  if (`${filter}`.match(/\d+\,\d+/)) {
+    closeTab(`${filter}`);
+    $.exit(0)
+    return;
   }
 
   const items = getList();
@@ -252,6 +258,7 @@ function closeByKeyword(cmd, filter) {
   }
 
   clearQueue([...tabsToClose]);
+  $.exit(0)
 }
 
 // Focus on a specific tab
