@@ -14,10 +14,6 @@ const chrome = Application('Google Chrome')
 chrome.includeStandardAdditions = true
 
 // Mode flags
-const MODE_CLI = 0    // Ask questions in command line
-const MODE_UI = 1     // Ask questions with Chrome dialogs
-const MODE_YES = 2    // Answer all questions with `yes`
-let MODE = MODE_CLI   // Default mode is command line
 let PREPEND_ALL_ITEM = false;
 
 // Print the usage message
@@ -27,15 +23,11 @@ function usage() {
   println('--------------\n')
   println('list <string?> --prependAllItem                       List all open tabs in all Chrome windows (optionally filter by title or url)          usage: ./chrome.js list myfilter')
   println('titles                        List all open tabs titles in all Chrome windows          usage: ./chrome.js titles')
-  println('dedup                       Close duplicate tabs                              usage: ./chrome.js dedup')
   println('close <winIdx,tabIdx>       Close a specific tab in a specific window         usage: ./chrome.js close 0,13')
-  println('close --title <string(s)>   Close all tabs with titles containing strings     usage: ./chrome.js close --title Inbox "iphone - apple"')
-  println('close --url <string(s)>     Close all tabs with URLs containing strings       usage: ./chrome.js close --url mail.google apple')
-  println('close --filter <string(s)>  Close all tabs with URLs or titles containing strings       usage: ./chrome.js close --filter mail.google apple')
+  println('close <string(s)>           Close all tabs with URLs or titles containing strings       usage: ./chrome.js close mail.google apple')
+  println('closeByTitles <string(s)>   Close all tabs that matches title(s)              usage: ./chrome.js closeByTitles Apple Microsoft')
   println('focus <winIdx,tabIdx>       Focus on a specific tab in a specific window      usage: ./chrome.js focus 0,13')
   println('focusByTitle <string>       Focus on a specific tab by its title in a specific window      usage: ./chrome.js focus "My Tab Title"')
-  println('--ui                        If set, use Chrome to show messages               usage  ./chrome.js close --title inbox --ui')
-  println('--yes                       If set, all questions will be anwered with "y"    usage  ./chrome.js close --title inbox --yes')
   $.exit(1)
 }
 
@@ -51,22 +43,6 @@ function run(argv) {
 // Chrome Control
 function chromeControl(argv) {
   if (argv.length < 1) { usage() }
-
-  // --ui flag will cause the questions to be asked using a
-  // Chrome dialog instead of text in command line.
-  let uiFlagIdx = argv.indexOf('--ui')
-  if (uiFlagIdx > -1) {
-    MODE = MODE_UI
-    argv.splice(uiFlagIdx, 1)
-  }
-
-  // --yes flag will cause no questions to be asked to the user.
-  // It'll close all tabs straight away so use it with caution.
-  let yesFlagIdx = argv.indexOf('--yes')
-  if (yesFlagIdx > -1) {
-    MODE = MODE_YES
-    argv.splice(yesFlagIdx, 1)
-  }
 
   PREPEND_ALL_ITEM = false;
   let prependAllItemIdx = argv.indexOf('--prependAllItem');
@@ -84,20 +60,18 @@ function chromeControl(argv) {
     case 'titles':
       listTitles();
       break;
-    case 'dedup':
-      dedup()
+    case 'close': {
+      if (argv.length === 1) { usage() }
+      const filter = argv.slice(1, argv.length)
+      closeByFilter(filter)
       break;
-    case 'close':
-      if (argv.length == 1) { usage() }
-      if (argv.length == 2) {
-        const arg = argv[1]
-        closeTab(arg)
-        $.exit(0)
-      }
-      const subcmd = argv[1]
-      const keywords = argv.slice(2, argv.length)
-      closeByKeyword(subcmd, keywords)
+    }
+    case 'closeByTitles': {
+      if (argv.length === 1) { usage() }
+      const titles = argv.slice(1, argv.length)
+      closeByTitles(titles)
       break;
+    }
     case 'focus':
       if (argv.length !== 2) { usage() }
       const arg = argv[1]
@@ -154,8 +128,8 @@ function list(filter) {
 
   if (filter) {
     items = items.filter((item) => {
-      const matchesTitle = item.title.toLowerCase().indexOf(filter.toLowerCase()) > -1;
-      const matchesUrl = item.url.toLowerCase().indexOf(filter.toLowerCase()) > -1;
+      const matchesTitle = `${item.title}`.toLowerCase().indexOf(filter.toLowerCase()) > -1;
+      const matchesUrl = `${item.url}`.toLowerCase().indexOf(filter.toLowerCase()) > -1;
       return matchesTitle || matchesUrl;
     });
   }
@@ -198,29 +172,17 @@ function closeTab(arg) {
   let { winIdx, tabIdx } = parseWinTabIdx(arg)
   let tabToClose = chrome.windows[winIdx].tabs[tabIdx]
 
-  // Ask the user before closing tab
-  if (MODE !== MODE_YES) {
-    areYouSure([tabToClose], 'Close this tab?', 'Couldn\'t find any matching tabs')
-  }
-
   tabToClose.close()
 }
 
 // Close a tab if strings are found in the title or URL
-function closeByKeyword(cmd, filter) {
-  if (cmd === '--title') {
-    getProperty = function (tab) { return { url: '', title: tab.title()} }
+function closeByFilter(filter) {
+  if (!filter) {
+    return;
   }
-  else if (cmd === '--url') {
-    getProperty = function (tab) { return { url: tab.url(), title: ''} }
-  } else if (cmd === '--filter') {
-    getProperty = function (tab) { return { url: tab.url(), title: tab.title() } }
-  } else {
-    usage()
-  }
+
   if (`${filter}`.match(/\d+\,\d+/)) {
     closeTab(`${filter}`);
-    $.exit(0)
     return;
   }
 
@@ -232,11 +194,6 @@ function closeByKeyword(cmd, filter) {
     const matchesUrl = item.url.toLowerCase().indexOf(filterLowercase) > -1;
     return matchesTitle || matchesUrl;
   });
-
-  // Ask the user before closing tabs
-  if (MODE !== MODE_YES) {
-    areYouSure(tabsToClose, 'Close these tabs?', 'Couldn\'t find any matching tabs')
-  }
 
   const clearQueue = (queue) => {
     if (!queue.length) {
@@ -258,16 +215,22 @@ function closeByKeyword(cmd, filter) {
   }
 
   clearQueue([...tabsToClose]);
-  $.exit(0)
+}
+
+function closeByTitles(titles) {
+  const titlesArr = `${titles}`.split('\n');
+  titlesArr.forEach((title) => {
+    const cleanTitle = title.substring(0, title.indexOf(' >> '));
+    closeByFilter(cleanTitle);
+  });
 }
 
 // Focus on a specific tab
 function focus(arg) {
-  let { winIdx, tabIdx } = parseWinTabIdx(arg)
-  chrome.windows[winIdx].visible = true
-  chrome.windows[winIdx].activeTabIndex = tabIdx + 1 // Focous on tab
-  chrome.windows[winIdx].index = 1 // Focus on this specific Chrome window
-  chrome.activate()
+  let { winIdx, tabIdx } = parseWinTabIdx(arg);
+  chrome.windows[winIdx].visible = true;
+  chrome.windows[winIdx].activeTabIndex = tabIdx + 1; // Focous on tab
+  chrome.windows[winIdx].index = 1; // Focus on this specific Chrome window
 }
 
 function focusByTitle(title) {
@@ -280,58 +243,9 @@ function focusByTitle(title) {
   }
 }
 
-// Close duplicate tabs
-function dedup() {
-  let urls = {}
-  let dups = []
-
-  chrome.windows().forEach(window => {
-    window.tabs().forEach(tab => {
-      const url = tab.url();
-      if (urls[url] === undefined) {
-        urls[url] = null
-      } else {
-        dups.push(tab)
-      }
-    })
-  })
-
-  // Ask the user before closing tabs
-  areYouSure(dups, 'Close these duplicates?', 'No duplicates found')
-
-  // Close tabs
-  dups.forEach(tab => { tab.close() })
-}
-
 /**
  * Helpers
  */
-
-// Show a message box in Chrome
-const alert = function (msg) {
-  if (MODE === MODE_YES) {
-    return
-  }
-  chrome.activate()
-  chrome.displayAlert(msg)
-}
-
-// Grab input from the command line and return it
-const prompt = function (msg) {
-  if (MODE === MODE_YES) {
-    return 'y'
-  } else if (MODE === MODE_UI) {
-    chrome.activate()
-    chrome.displayDialog(msg)
-    return
-  }
-  println(`\n${msg} (y/N)`)
-  return $.NSString.alloc.initWithDataEncoding(
-    $.NSFileHandle.fileHandleWithStandardInput.availableData,
-    $.NSUTF8StringEncoding
-  ).js.trim()
-}
-
 // JXA always prints to stderr, so we need this custom print function
 const print = function (msg) {
   $.NSFileHandle.fileHandleWithStandardOutput.writeData(
@@ -343,37 +257,6 @@ const print = function (msg) {
 // Print with a new line at the end
 const println = function (msg) {
   print(msg + '\n')
-}
-
-// Ask the user before closing tabs
-function areYouSure(tabsToClose, promptMsg, emptyMsg) {
-  // Give user feedback if no matching tabs were found
-  if (tabsToClose.length === 0) {
-    if (MODE == MODE_CLI) {
-      println(emptyMsg)
-    } else {
-      alert(emptyMsg)
-    }
-
-    $.exit(0)
-  }
-
-  // Grab the titles to show to the user
-  let titles = []
-  tabsToClose.forEach(tab => {
-    titles.push(`${tab.title()} >> ${tab.url()}`)
-  })
-
-  // Focus on Chrome and ask user if they really want to close these tabs
-  if (MODE == MODE_CLI) {
-    println(`\n${titles.join('\n')}`)
-    if (prompt(promptMsg) !== 'y') {
-      println('Canceled')
-      $.exit(0)
-    }
-  } else {
-    prompt(`${promptMsg}\n\m${titles.join('\n')}`)
-  }
 }
 
 // Get winIdx and tabIdx from arg
