@@ -95,9 +95,10 @@ function chromeControl(argv) {
 
 // List all open tabs
 function getList() {
-  const allTabsTitle = chrome.windows.tabs.title();
-  const allTabsUrls = chrome.windows.tabs.url();
-  const allTabIds = chrome.windows.tabs.id();
+  const wins = chrome.windows;
+  const allTabsTitle = wins.tabs.title();
+  const allTabsUrls = wins.tabs.url();
+  const allTabIds = wins.tabs.id();
 
   var titleToUrl = [];
   for (var winIdx = 0; winIdx < allTabsTitle.length; winIdx++) {
@@ -202,11 +203,12 @@ function closeByFilter(filter) {
 
     const item = queue.pop();
     const { winIdx, tabIdx } = item;
+    const wins = chrome.windows;
 
-    if (chrome.windows[winIdx].tabs.length === 1) {
-      chrome.windows[winIdx].close();
+    if (wins[winIdx].tabs.length === 1) {
+      wins[winIdx].close();
     } else {
-      chrome.windows[winIdx].tabs[tabIdx].close();
+      wins[winIdx].tabs[tabIdx].close();
     }
 
     if (queue.length) {
@@ -228,9 +230,11 @@ function closeByTitles(titles) {
 // Focus on a specific tab
 function focus(arg) {
   let { winIdx, tabIdx } = parseWinTabIdx(arg);
-  chrome.windows[winIdx].visible = true;
-  chrome.windows[winIdx].activeTabIndex = tabIdx + 1; // Focous on tab
-  chrome.windows[winIdx].index = 1; // Focus on this specific Chrome window
+  const wins = chrome.windows;
+  wins[winIdx].visible = true;
+  wins[winIdx].activeTabIndex = tabIdx + 1; // Focous on tab
+  wins[winIdx].index = 1; // Focus on this specific Chrome window
+  chrome.activate();
 }
 
 function focusByTitle(title) {
